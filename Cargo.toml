@@ -1,0 +1,12 @@
+[package]
+name = "smmuv3"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "=0.4.21"
+tock-registers = "0.8"
+aarch64-cpu = "9.3"
+bitflags = "2.6"
+
+memory_addr = "0.3"

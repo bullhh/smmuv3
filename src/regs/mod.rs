@@ -1,0 +1,23 @@
+mod aidr;
+mod cmdq_base;
+mod cmdq_cons;
+mod cmdq_prod;
+mod cr0;
+mod cr0ack;
+mod cr1;
+mod idr0;
+mod idr1;
+mod strtab_base;
+mod strtab_base_cfg;
+
+pub use aidr::*;
+pub use cmdq_base::*;
+pub use cmdq_cons::*;
+pub use cmdq_prod::*;
+pub use cr0::*;
+pub use cr0ack::*;
+pub use cr1::*;
+pub use idr0::*;
+pub use idr1::*;
+pub use strtab_base::*;
+pub use strtab_base_cfg::*;
