@@ -4,7 +4,7 @@ use tock_registers::registers::ReadOnly;
 register_bitfields! {u32,
     pub IDR0 [
         /// Multi-level Stream table support.
-        /// 
+        ///
         /// - 0b00 Linear Stream table supported.
         /// - 0b01 2-level Stream table supported in addition to Linear Stream table.
         /// - 0b1x Reserved.
@@ -13,7 +13,7 @@ register_bitfields! {u32,
             TwoLevelStreamTableInAdditionToLinearStreamTable = 0b01
         ],
         /// 16-bit VMID supported.
-        /// 
+        ///
         /// - 0b0 16-bit VMID not supported.
         ///     - VMID[15:8] is RES0in command parameters and must be zero in STE.S2VMID.
         /// - 0b1 16-bit VMID supported.
@@ -31,7 +31,7 @@ register_bitfields! {u32,
             Supported = 1
         ],
         /// H/W translation table Access flag and Dirty state of the page updates supported.
-        /// 
+        ///
         /// - 0b00 No flag updates supported.
         /// - 0b01 Access flag update supported.
         /// - 0b10 Access flag and Dirty state of the page update supported.
@@ -43,7 +43,7 @@ register_bitfields! {u32,
             AccessFlagDirtyStateAccessFlagTableDescriptors = 0b11
         ],
         /// Broadcast TLB Maintenance. Indicates support for receiving broadcast TLBI operations issued by Arm PEs in the system.
-        /// 
+        ///
         /// - 0b0 Broadcast TLB maintenance not supported.
         /// - 0b1 Boradcast TLB maintenance supported.
         ///
@@ -53,7 +53,7 @@ register_bitfields! {u32,
             Supported = 1
         ],
         /// Coherent access supported to translations, structures and queues.
-        /// 
+        ///
         /// - 0b0 Coherent access for translations, structures and queues is not supported.
         /// - 0b1 IO-coherent access is supported for: • Translation table walks.
         ///     - Fetches of L1STD, STE, L1CD and CD. • Command queue, Event queue and PRI queue access.

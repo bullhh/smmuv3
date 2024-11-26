@@ -116,6 +116,7 @@ const fn extract_bits(value: u64, start: u64, length: u64) -> u64 {
     (value >> start) & mask
 }
 
+#[allow(unused)]
 pub struct StreamTableEntry([u64; STRTAB_STE_DWORDS]);
 
 impl StreamTableEntry {

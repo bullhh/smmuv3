@@ -121,5 +121,5 @@ register_bitfields! {u32,
 }
 
 /// Access on this interface is RO.
-/// 
+///
 pub type Cr0AckReg = ReadOnly<u32, CR0ACK::Register>;

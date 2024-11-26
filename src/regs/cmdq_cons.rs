@@ -1,12 +1,12 @@
 //! Chapter 6. Memory map and registers
 //! 6.3. Register formats
 //! 6.3.28 SMMU_CMDQ_CONS
-//! 
+//!
 //! The SMMU_CMDQ_CONS characteristics are:
-//! 
+//!
 //! ## Purpose
 //! Command queue consumer read index.
-//! 
+//!
 //! ## Attributes
 //! SMMU_CMDQ_CONS is a 32-bit register.
 //! This register is part of the SMMUv3_PAGE_0 block.

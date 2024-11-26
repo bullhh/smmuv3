@@ -23,7 +23,7 @@ mod stream_table;
 pub use hal::PagingHandler;
 pub use regs::*;
 
-use queue::Queue;
+use queue::{Cmd, Queue};
 use stream_table::LinearStreamTable;
 
 register_structs! {
@@ -122,10 +122,10 @@ impl<H: PagingHandler> SMMUv3<H> {
         );
         self.regs()
             .CMDQ_PROD
-            .write(CMDQ_PROD::WR.val(self.cmd_queue.prod()));
+            .write(CMDQ_PROD::WR.val(self.cmd_queue.prod_value()));
         self.regs()
             .CMDQ_CONS
-            .write(CMDQ_CONS::RD.val(self.cmd_queue.cons()));
+            .write(CMDQ_CONS::RD.val(self.cmd_queue.cons_value()));
 
         self.enable();
     }
@@ -176,7 +176,48 @@ impl<H: PagingHandler> SMMUv3<H> {
         self.regs().IDR0.is_set(IDR0::S1P);
     }
 
+    pub fn add_cmd(&mut self, cmd: Cmd, sync: bool) {
+        while self.cmd_queue.full() {
+            warn!("Command queue is full, try consuming");
+            let cmdq_cons = self.regs().CMDQ_CONS.get();
+            if cmdq_cons & CMDQ_CONS::ERR.mask != 0 {
+                warn!(
+                    "CMDQ_CONS ERR code {}",
+                    (cmdq_cons & CMDQ_CONS::ERR.mask) >> CMDQ_CONS::ERR.shift
+                );
+            }
+
+            let cons_value = cmdq_cons & CMDQ_CONS::RD.mask;
+            self.cmd_queue.set_cons_value(cons_value);
+        }
+        
+        self.cmd_queue.cmd_insert(cmd);
+        self.regs()
+            .CMDQ_PROD
+            .write(CMDQ_PROD::WR.val(self.cmd_queue.prod_value()));
+
+        while !self.cmd_queue.empty() {
+            debug!("Command queue is not empty, consuming");
+            let cmdq_cons = self.regs().CMDQ_CONS.get();
+            if cmdq_cons & CMDQ_CONS::ERR.mask != 0 {
+                warn!(
+                    "CMDQ_CONS ERR code {}",
+                    (cmdq_cons & CMDQ_CONS::ERR.mask) >> CMDQ_CONS::ERR.shift
+                );
+            }
+            let cons_value = cmdq_cons & CMDQ_CONS::RD.mask;
+            self.cmd_queue.set_cons_value(cons_value);
+        }
+
+        if sync {
+            self.add_cmd(Cmd::cmd_sync(), false);
+        }
+    }
+
     pub fn add_device(&mut self, sid: usize, vmid: usize, s2pt_base: PhysAddr) {
+        let cmd = Cmd::cmd_cfgi_ste(sid as u32);
+        self.add_cmd(cmd, true);
+
         self.stream_table
             .set_s2_translated_ste(sid, vmid, s2pt_base);
     }
