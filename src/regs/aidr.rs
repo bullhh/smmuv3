@@ -1,3 +1,17 @@
+//! Chapter 6. Memory map and registers
+//! 6.3. Register formats
+//! 6.3.8 SMMU_AIDR
+//!
+//! The SMMU_AIDR characteristics are:
+//!
+//! ## Purpose
+//! This register identifies the SMMU architecture version to which the implementation conforms.
+//!
+//! ## Attributes
+//! SMMU_AIDR is a 32-bit register.
+//!
+//! This register is part of the SMMUv3_PAGE_0 block.
+
 use tock_registers::register_bitfields;
 use tock_registers::registers::ReadOnly;
 
@@ -26,4 +40,5 @@ register_bitfields! {u32,
     ]
 }
 
+/// SMMU_AIDR register, read-write.
 pub type AIDRReg = ReadOnly<u32, AIDR::Register>;

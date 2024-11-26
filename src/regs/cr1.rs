@@ -122,4 +122,5 @@ register_bitfields! {u32,
     ]
 }
 
+/// CR1 register, read-write.
 pub type Cr1Reg = ReadWrite<u32, CR1::Register>;

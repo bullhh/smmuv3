@@ -1,7 +1,7 @@
 use memory_addr::{PhysAddr, VirtAddr};
 
 /// The low-level **OS-dependent** helpers that must be provided for
-/// [`smmuv3`].
+/// [`crate::SMMUv3`].
 pub trait PagingHandler: Sized {
     /// Request to allocate contiguous 4K-sized pages.
     fn alloc_pages(num_pages: usize) -> Option<PhysAddr>;

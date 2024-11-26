@@ -117,5 +117,7 @@ register_bitfields! {u32,
     ]
 }
 
+/// CR0 Register, read-write.
+///
 /// Each field in this register has a corresponding field in SMMU_CR0ACK. An individual field is described as Updated after the value of the field observed in SMMU_CR0ACK matches the value that was written to the field in [`Cr0Reg`]. Reserved fields in [`Cr0Reg`] are not reflected in SMMU_CR0ACK. To ensure a field change has taken effect, software must poll the equivalent field in SMMU_CR0ACK after writing the field in this register.
 pub type Cr0Reg = ReadWrite<u32, CR0::Register>;

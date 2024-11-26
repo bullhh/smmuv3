@@ -1,3 +1,15 @@
+//! Chapter 6. Memory map and registers
+//! 6.3. Register formats
+//! 6.3.1 SMMU_IDR0 The SMMU_IDR0 characteristics are:
+//!
+//! ## Purpose
+//! Provides information about the features implemented for the SMMU Non-secure programming interface.
+//!
+//! ## Attributes
+//! SMMU_IDR0 is a 32-bit register.
+//!
+//! This register is part of the SMMUv3_PAGE_0 block.
+
 use tock_registers::register_bitfields;
 use tock_registers::registers::ReadOnly;
 
@@ -96,4 +108,5 @@ register_bitfields! {u32,
     ]
 }
 
+/// IDR0 Register, read-only.
 pub type IDR0Reg = ReadOnly<u32, IDR0::Register>;

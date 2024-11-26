@@ -27,8 +27,13 @@ use queue::{Cmd, Queue};
 use stream_table::LinearStreamTable;
 
 register_structs! {
+    /// Chapter 6. Memory map and registers 6.2.
+    /// SMMU registers occupy two consecutive 64KB pages starting from an at least 64KB-aligned boundary.
+    /// The following registers are accessible from the SMMU page 0 and page 1 region.
+    /// - 0x00000-0x0FFFF SMMU registers, Page 0
+    /// - 0x10000-0x1FFFF SMMU registers, Page 1
     #[allow(non_snake_case)]
-    pub SMMUv3Page0Regs  {
+    pub SMMUv3Regs  {
         (0x0000 => IDR0: IDR0Reg),
         (0x0004 => IDR1: IDR1Reg),
         (0x0008 => IDR2: ReadOnly<u32>),
@@ -68,8 +73,9 @@ register_structs! {
     }
 }
 
+/// SMMUv3 driver with a linear stream table and cmd queue.
 pub struct SMMUv3<H: PagingHandler> {
-    base: NonNull<SMMUv3Page0Regs>,
+    base: NonNull<SMMUv3Regs>,
     stream_table: LinearStreamTable<H>,
     cmd_queue: Queue<H>,
 }
@@ -87,6 +93,7 @@ impl<H: PagingHandler> SMMUv3<H> {
         }
     }
 
+    /// Initialize the SMMUv3 instance.
     pub fn init(&mut self) {
         let sid_max_bits = self.regs().IDR1.read(IDR1::SIDSIZE);
         info!(
@@ -153,10 +160,12 @@ impl<H: PagingHandler> SMMUv3<H> {
         error!("CR0 write err!");
     }
 
-    const fn regs(&self) -> &SMMUv3Page0Regs {
+    /// Get the SMMUv3 registers.
+    pub const fn regs(&self) -> &SMMUv3Regs {
         unsafe { self.base.as_ref() }
     }
 
+    /// Get the SMMUv3 version.
     pub fn version(&self) -> &'static str {
         match self.regs().AIDR.read_as_enum(AIDR::ArchMinorRev) {
             Some(AIDR::ArchMinorRev::Value::SMMUv3_0) => "SMMUv3.0",
@@ -168,14 +177,7 @@ impl<H: PagingHandler> SMMUv3<H> {
         }
     }
 
-    pub fn aidr(&self) -> &AIDRReg {
-        &self.regs().AIDR
-    }
-
-    pub fn check_features(&self) {
-        self.regs().IDR0.is_set(IDR0::S1P);
-    }
-
+    /// Add a command to the command queue.
     pub fn add_cmd(&mut self, cmd: Cmd, sync: bool) {
         while self.cmd_queue.full() {
             warn!("Command queue is full, try consuming");
@@ -190,7 +192,7 @@ impl<H: PagingHandler> SMMUv3<H> {
             let cons_value = cmdq_cons & CMDQ_CONS::RD.mask;
             self.cmd_queue.set_cons_value(cons_value);
         }
-        
+
         self.cmd_queue.cmd_insert(cmd);
         self.regs()
             .CMDQ_PROD
@@ -214,6 +216,7 @@ impl<H: PagingHandler> SMMUv3<H> {
         }
     }
 
+    /// Add a passthrough device, updating the stream table.
     pub fn add_device(&mut self, sid: usize, vmid: usize, s2pt_base: PhysAddr) {
         let cmd = Cmd::cmd_cfgi_ste(sid as u32);
         self.add_cmd(cmd, true);

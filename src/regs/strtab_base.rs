@@ -50,4 +50,5 @@ register_bitfields! {u64,
     ]
 }
 
+/// SMMU Stream table base address register, Read-Write.
 pub type StrtabBaseReg = ReadWrite<u64, STRTAB_BASE::Register>;

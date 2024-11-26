@@ -1,3 +1,5 @@
+use core::mem::size_of;
+
 use memory_addr::{align_up_4k, va, VirtAddr, PAGE_SIZE_4K};
 
 use crate::hal::PagingHandler;
