@@ -47,3 +47,26 @@ register_bitfields! {u32,
 ///
 /// `SMMU_CMDQ_CONS.RD != SMMU_CMDQ_PROD.WR || SMMU_CMDQ_CONS.RD_WRAP == SMMU_CMDQ_PROD.WR_WRAP`
 pub type CmdQProdReg = ReadWrite<u32, CMDQ_PROD::Register>;
+
+
+register_bitfields! {u32,
+    pub EVENTQ_PROD [
+        /// OVSLG, bit [31] Overflow flag.
+        OVSLG OFFSET(31) NUMBITS(1) [],
+        /// Bits [30:20] Reserved, RES0.
+        Reserved31 OFFSET(20) NUMBITS(11) [],
+        /// WR, bits [19:0]
+        /// event queue write index.
+        ///
+        /// This field is treated as two sub-fields, depending on the configured queue size:
+        /// - **Bit [QS]: WR_WRAP** -  queue write index wrap flag.
+        /// - **Bits [QS-1:0]: WR** -  queue write index.
+        ///     - Updated by the host PE (producer) indicating the next empty space in the queue after new data.
+        ///
+        /// The reset behavior of this field is:
+        /// - This field resets to an UNKNOWN value.
+        WR OFFSET(0) NUMBITS(20) []
+    ]
+}
+
+pub type EventQProdReg = ReadWrite<u32, EVENTQ_PROD::Register>;

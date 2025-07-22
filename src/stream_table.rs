@@ -66,7 +66,7 @@ const DEFAULT_S2VTCR: u64 = VTCR_EL2::PS::PA_40B_1TB.mask()
     | VTCR_EL2::ORGN0::NormalWBRAWA.mask()
     | VTCR_EL2::IRGN0::NormalWBRAWA.mask()
     | VTCR_EL2::SL0.val(0b01).mask()
-    | VTCR_EL2::T0SZ.val(64 - 39).mask();
+    | VTCR_EL2::T0SZ.val(16).mask();
 
 /// S2AA64, bit [179]
 ///
@@ -136,7 +136,7 @@ impl StreamTableEntry {
     pub const fn s2_translated_entry(vmid: u64, s2pt_base: PhysAddr) -> Self {
         Self([
             STRTAB_STE_0_V | STRTAB_STE_0_CFG_S1_BYPASS_S2_TRANS,
-            0,
+            STRTAB_STE_1_SHCFG_INCOMING,
             (vmid << STRTAB_STE_2_S2VMID_OFFSET)
                 | extract_bits(DEFAULT_S2VTCR, 0, STRTAB_STE_2_S2VTCR_LEN)
                     << STRTAB_STE_2_S2T0SZ_OFFSET
@@ -208,5 +208,9 @@ impl<H: PagingHandler> LinearStreamTable<H> {
 
         let entry = self.ste(sid);
         *entry = StreamTableEntry::s2_translated_entry(vmid as _, s2pt_base);
+    }
+
+    pub fn entry_count(&self) -> usize {
+        self.entry_count
     }
 }

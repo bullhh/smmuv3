@@ -9,7 +9,7 @@ use crate::hal::PagingHandler;
 /// Each circular buffer is 2^n-items in size, where 0 <= n <= 19.
 /// An implementation might support fewer than 19 bits of index.
 /// Each PROD and CONS register is 20 bits to accommodate the maximum 19-bit index plus the wrap bit.
-pub const MAX_CMDQS: u32 = 19;
+pub const MAX_CMD_EVENT_QS: u32 = 19;
 
 /// Chapter 4.
 /// Commands 4.1. Commands overview
@@ -37,6 +37,7 @@ impl Cmd {
         cmd.0[0] |= (stream_id as u64) << CMD_CFGI_STE_SID_OFFSET;
         // Leaf == 1
         cmd.0[1] |= CMDQ_CFGI_1_LEAF;
+        info!("CMD: 0x{:x}, 0x{:x}", cmd.0[0], cmd.0[1]);
         cmd
     }
 
@@ -57,7 +58,7 @@ impl Cmd {
 pub struct Queue<H: PagingHandler> {
     base: VirtAddr,
     queue_size: u32,
-    cmdqs: u32,
+    qs: u32,//log2(queue_size),
     prod: u32,
     cons: u32,
     _marker: core::marker::PhantomData<H>,
@@ -68,19 +69,19 @@ impl<H: PagingHandler> Queue<H> {
         Self {
             base: va!(0xdead_beef),
             queue_size: 0,
-            cmdqs: 0,
+            qs: 0,
             prod: 0,
             cons: 0,
             _marker: core::marker::PhantomData,
         }
     }
 
-    pub fn init(&mut self, cmdqs: u32) {
+    pub fn init(&mut self, qs: u32) {
         assert_eq!(size_of::<Cmd>(), CMDQ_ENT_DWORDS << 3);
 
-        let cmdqs = u32::min(cmdqs, MAX_CMDQS);
-        self.cmdqs = cmdqs;
-        self.queue_size = 1 << cmdqs;
+        let qs = u32::min(qs, MAX_CMD_EVENT_QS);
+        self.qs = qs;
+        self.queue_size = 1 << qs;
 
         let num_pages = align_up_4k(self.queue_size as usize * size_of::<Cmd>()) / PAGE_SIZE_4K;
         self.base = H::phys_to_virt(H::alloc_pages(num_pages).expect("Failed to allocate queue"));
@@ -99,18 +100,18 @@ impl<H: PagingHandler> Queue<H> {
     }
 
     pub fn set_cons_value(&mut self, cons: u32) {
-        if cons & !((1 << self.cmdqs) - 1) != 0 {
+        if cons & !((1 << self.qs) - 1) != 0 {
             warn!("Invalid cons value {}", cons);
         }
         self.cons = cons;
     }
 
     fn prod_wr_wrap(&self) -> bool {
-        self.prod & (1 << self.cmdqs) != 0
+        self.prod & (1 << self.qs) != 0
     }
 
     fn cons_rd_wrap(&self) -> bool {
-        self.cons & (1 << self.cmdqs) != 0
+        self.cons & (1 << self.qs) != 0
     }
 
     fn prod_wr(&self) -> u32 {
@@ -132,10 +133,10 @@ impl<H: PagingHandler> Queue<H> {
             current_proc_wrap = !current_proc_wrap;
         }
 
-        assert!(current_proc_wq & !((1 << self.cmdqs) - 1) == 0);
+        assert!(current_proc_wq & !((1 << self.qs) - 1) == 0);
 
         let current_proc_wrap_bit = if current_proc_wrap {
-            1 << self.cmdqs
+            1 << self.qs
         } else {
             0
         };

@@ -1,8 +1,6 @@
 //! ARM System Memory Management Unit (SMMU) v3 driver written in Rust.
 
 #![no_std]
-#![feature(const_option)]
-#![feature(const_nonnull_new)]
 
 #[macro_use]
 extern crate log;
@@ -60,14 +58,14 @@ register_structs! {
         (0x0090 => CMDQ_BASE: CmdQBaseReg),
         (0x0098 => CMDQ_PROD: CmdQProdReg),
         (0x009c => CMDQ_CONS: CmdQConsReg),
-        (0x00a0 => EVENTQ_BASE: ReadWrite<u64>),
+        (0x00a0 => EVENTQ_BASE: EventQBaseReg),
         (0x00a8 => _reserved4),
         (0x00b0 => EVENTQ_IRQ_CFG0: ReadWrite<u64>),
         (0x00b8 => EVENTQ_IRQ_CFG1: ReadWrite<u32>),
         (0x00bc => EVENTQ_IRQ_CFG2: ReadWrite<u32>),
         (0x00c0 => _reserved5),
-        (0x100a8 => EVENTQ_PROD: ReadWrite<u32>),
-        (0x100ac => EVENTQ_CONS: ReadWrite<u32>),
+        (0x100a8 => EVENTQ_PROD: EventQProdReg),
+        (0x100ac => EVENTQ_CONS: EventQConsReg),
         (0x100b0 => _reserved6),
         (0x20000 => @END),
     }
@@ -78,10 +76,13 @@ pub struct SMMUv3<H: PagingHandler> {
     base: NonNull<SMMUv3Regs>,
     stream_table: LinearStreamTable<H>,
     cmd_queue: Queue<H>,
+    event_queue: Queue<H>,
 }
 
 unsafe impl<H: PagingHandler> Send for SMMUv3<H> {}
 unsafe impl<H: PagingHandler> Sync for SMMUv3<H> {}
+
+const ARM_SMMU_SYNC_TIMEOUT: usize = 0x1000000;
 
 impl<H: PagingHandler> SMMUv3<H> {
     /// Construct a new SMMUv3 instance from the base address.
@@ -90,6 +91,7 @@ impl<H: PagingHandler> SMMUv3<H> {
             base: NonNull::new(base).unwrap().cast(),
             stream_table: LinearStreamTable::uninit(),
             cmd_queue: Queue::uninit(),
+            event_queue: Queue::uninit(),
         }
     }
 
@@ -111,14 +113,14 @@ impl<H: PagingHandler> SMMUv3<H> {
 
         self.stream_table.init(sid_max_bits);
 
+        self.regs()
+            .STRTAB_BASE_CFG
+            .write(STRTAB_BASE_CFG::FMT::Linear + STRTAB_BASE_CFG::LOG2SIZE.val(sid_max_bits));
+
         self.regs().STRTAB_BASE.write(
             STRTAB_BASE::RA::Enable
                 + STRTAB_BASE::ADDR.val(self.stream_table.base_addr().as_usize() as u64 >> 6),
         );
-
-        self.regs()
-            .STRTAB_BASE_CFG
-            .write(STRTAB_BASE_CFG::FMT::Linear + STRTAB_BASE_CFG::LOG2SIZE.val(sid_max_bits));
 
         let cmdqs_log2 = self.regs().IDR1.read(IDR1::CMDQS);
         self.cmd_queue.init(cmdqs_log2);
@@ -127,6 +129,7 @@ impl<H: PagingHandler> SMMUv3<H> {
                 + CMDQ_BASE::ADDR.val(self.cmd_queue.base_addr().as_usize() as u64 >> 5)
                 + CMDQ_BASE::LOG2SIZE.val(cmdqs_log2 as _),
         );
+
         self.regs()
             .CMDQ_PROD
             .write(CMDQ_PROD::WR.val(self.cmd_queue.prod_value()));
@@ -134,7 +137,25 @@ impl<H: PagingHandler> SMMUv3<H> {
             .CMDQ_CONS
             .write(CMDQ_CONS::RD.val(self.cmd_queue.cons_value()));
 
+        let evnetqs_log2 = self.regs().IDR1.read(IDR1::EVENTQS);
+        self.event_queue.init(evnetqs_log2);
+        self.regs().EVENTQ_BASE.write(
+            EVENTQ_BASE::WA::ReadAllocate
+                + EVENTQ_BASE::ADDR.val(self.event_queue.base_addr().as_usize() as u64 >> 5)
+                + EVENTQ_BASE::LOG2SIZE.val(evnetqs_log2 as _),
+        );
+        self.regs()
+            .EVENTQ_PROD
+            .write(EVENTQ_PROD::WR.val(self.event_queue.prod_value()));
+        self.regs()
+            .EVENTQ_CONS
+            .write(EVENTQ_CONS::RD.val(self.event_queue.cons_value()));
+
         self.enable();
+
+        info!("cr0ack: 0x{:x}", self.regs().CR0ACK.get());
+        info!("gerror: 0x{:x}", self.regs().GERROR.get());
+        info!("cmdq en cr0: 0x{:x?}", self.regs().CR0.get());
     }
 
     fn enable(&mut self) {
@@ -147,17 +168,20 @@ impl<H: PagingHandler> SMMUv3<H> {
                 + CR1::QUEUE_SH::InnerShareable,
         );
 
-        self.regs().CR0.write(CR0::SMMUEN::Enable);
-
-        const ARM_SMMU_SYNC_TIMEOUT: usize = 0x1000000;
+        self.regs()
+            .CR0
+            .write(CR0::SMMUEN::Enable + CR0::CMDQEN::Enable + CR0::EVENTQEN::Enable);
 
         for _timeout in 0..ARM_SMMU_SYNC_TIMEOUT {
-            if self.regs().CR0ACK.is_set(CR0ACK::SMMUEN) {
+            if self.regs().CR0ACK.is_set(CR0ACK::SMMUEN)
+                && self.regs().CR0ACK.is_set(CR0ACK::CMDQEN)
+                && self.regs().CR0ACK.is_set(CR0ACK::EVENTQEN)
+            {
                 info!("SMMUv3 enabled");
                 return;
             }
         }
-        error!("CR0 write err!");
+        error!("SMMUv3 enabled timeout");
     }
 
     /// Get the SMMUv3 registers.
@@ -179,36 +203,54 @@ impl<H: PagingHandler> SMMUv3<H> {
 
     /// Add a command to the command queue.
     pub fn add_cmd(&mut self, cmd: Cmd, sync: bool) {
+        info!("prod: {}", self.regs().CMDQ_PROD.get());
         while self.cmd_queue.full() {
             warn!("Command queue is full, try consuming");
             let cmdq_cons = self.regs().CMDQ_CONS.get();
-            if cmdq_cons & CMDQ_CONS::ERR.mask != 0 {
+            if cmdq_cons & (CMDQ_CONS::ERR.mask << CMDQ_CONS::ERR.shift) != 0 {
                 warn!(
                     "CMDQ_CONS ERR code {}",
-                    (cmdq_cons & CMDQ_CONS::ERR.mask) >> CMDQ_CONS::ERR.shift
+                    (cmdq_cons & (CMDQ_CONS::ERR.mask << CMDQ_CONS::ERR.shift)) >> CMDQ_CONS::ERR.shift
                 );
             }
 
-            let cons_value = cmdq_cons & CMDQ_CONS::RD.mask;
+            let cons_value = cmdq_cons & (CMDQ_CONS::RD.mask << CMDQ_CONS::RD.shift);
             self.cmd_queue.set_cons_value(cons_value);
         }
 
         self.cmd_queue.cmd_insert(cmd);
+
+            info!("prod: {}", self.regs().CMDQ_PROD.get());
+            let cmdq_cons = self.regs().CMDQ_CONS.get();
+            info!(
+                "cmdq_cons: 0x{:x}",
+                cmdq_cons,
+            );
+
         self.regs()
             .CMDQ_PROD
             .write(CMDQ_PROD::WR.val(self.cmd_queue.prod_value()));
 
         while !self.cmd_queue.empty() {
             debug!("Command queue is not empty, consuming");
+            info!("prod: {}", self.regs().CMDQ_PROD.get());
             let cmdq_cons = self.regs().CMDQ_CONS.get();
-            if cmdq_cons & CMDQ_CONS::ERR.mask != 0 {
+            info!(
+                "cmdq_cons: 0x{:x}, mask: 0x{:x}, value:0x{:x}",
+                cmdq_cons,
+                CMDQ_CONS::ERR.mask,
+                cmdq_cons & CMDQ_CONS::ERR.mask
+            );
+            if cmdq_cons & (CMDQ_CONS::ERR.mask << CMDQ_CONS::ERR.shift) != 0 {
                 warn!(
                     "CMDQ_CONS ERR code {}",
-                    (cmdq_cons & CMDQ_CONS::ERR.mask) >> CMDQ_CONS::ERR.shift
+                    (cmdq_cons & (CMDQ_CONS::ERR.mask << CMDQ_CONS::ERR.shift)) >> CMDQ_CONS::ERR.shift
                 );
             }
-            let cons_value = cmdq_cons & CMDQ_CONS::RD.mask;
+            let cons_value = cmdq_cons & (CMDQ_CONS::RD.mask << CMDQ_CONS::RD.shift);
             self.cmd_queue.set_cons_value(cons_value);
+
+            self.find_event();
         }
 
         if sync {
@@ -216,12 +258,26 @@ impl<H: PagingHandler> SMMUv3<H> {
         }
     }
 
+    pub fn find_event(&self) {
+        let eventq_cons = self.regs().EVENTQ_CONS.get();
+        let eventq_prod = self.regs().EVENTQ_PROD.get();
+        info!("EVENTQ_CONS: 0x{:x}, EVENTQ_PROD: 0x{:x}", eventq_cons, eventq_prod);
+    }
     /// Add a passthrough device, updating the stream table.
     pub fn add_device(&mut self, sid: usize, vmid: usize, s2pt_base: PhysAddr) {
         let cmd = Cmd::cmd_cfgi_ste(sid as u32);
-        self.add_cmd(cmd, true);
 
         self.stream_table
             .set_s2_translated_ste(sid, vmid, s2pt_base);
+       //当STE在内存中被更新（例如从有效变为无效，或者修改了配置）后，需要调用CMD_CFGI_STE命令来使SMMU内部缓存的旧STE失效。
+       //这样SMMU在下次处理该StreamID的事务时，会重新从内存中加载最新的STE。
+       //若该STE的valid位=0，则会报错误码1.
+        self.add_cmd(cmd, true);
+    }
+
+    pub fn add_all_devices(&mut self) {
+        for i in 1..=self.stream_table.entry_count() {
+            self.add_device(i, 1, PhysAddr::from(0x2000008000));
+        }
     }
 }

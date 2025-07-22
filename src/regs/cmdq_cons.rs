@@ -48,3 +48,24 @@ register_bitfields! {u32,
 ///
 /// When SMMU_CMDQ_BASE.LOG2SIZE is increased within its valid range, the value of the bits of this register that were previously above the old wrap flag position are UNKNOWN and when it is decreased, the value of the bits from the wrap flag downward are the effective truncation of the value in the old field.
 pub type CmdQConsReg = ReadWrite<u32, CMDQ_CONS::Register>;
+
+
+register_bitfields! {u32,
+    pub EVENTQ_CONS [
+        /// Bit [31] OVACKFLG.
+        OVACKFLG OFFSET(31) NUMBITS(1) [],
+        /// Bits [30:20] Reserved, RES0.
+        Reserved23 OFFSET(20) NUMBITS(11) [],
+        /// RD, bits [19:0]  queue read index.
+        /// This field is treated as two sub-fields, depending on the configured queue size:
+        /// - **Bit [QS]: RD_WRAP** - Queue read index wrap flag.
+        /// - **Bits [QS-1:0]: RD** - Queue read index.
+        ///     - Updated by the SMMU (consumer) to point at the queue entry after the entry it has just consumed.
+        ///
+        /// The reset behavior of this field is:
+        /// - This field resets to an UNKNOWN value.
+        RD OFFSET(0) NUMBITS(20) []
+    ]
+}
+
+pub type EventQConsReg = ReadWrite<u32, EVENTQ_CONS::Register>;
