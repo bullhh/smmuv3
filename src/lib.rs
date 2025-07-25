@@ -98,11 +98,7 @@ impl<H: PagingHandler> SMMUv3<H> {
     /// Initialize the SMMUv3 instance.
     pub fn init(&mut self) {
         let sid_max_bits = self.regs().IDR1.read(IDR1::SIDSIZE);
-        info!(
-            "Max SID bits: {}, max SIE count {}",
-            sid_max_bits,
-            1 << sid_max_bits
-        );
+        info!("Max SID bits: {}, max SIE count {}", sid_max_bits, 1 << sid_max_bits);
 
         if sid_max_bits >= 7
             && self.regs().IDR0.read(IDR0::ST_LEVEL) == IDR0::ST_LEVEL::LinearStreamTable.into()
@@ -111,18 +107,19 @@ impl<H: PagingHandler> SMMUv3<H> {
             panic!("Smmuv3 the system must support for 2-level table");
         }
 
-        self.stream_table.init(sid_max_bits);
+        self.stream_table.init(H::SID_BITS_SET);
 
         self.regs()
             .STRTAB_BASE_CFG
-            .write(STRTAB_BASE_CFG::FMT::Linear + STRTAB_BASE_CFG::LOG2SIZE.val(sid_max_bits));
+            .write(STRTAB_BASE_CFG::FMT::Linear + STRTAB_BASE_CFG::LOG2SIZE.val(H::SID_BITS_SET));
 
         self.regs().STRTAB_BASE.write(
             STRTAB_BASE::RA::Enable
                 + STRTAB_BASE::ADDR.val(self.stream_table.base_addr().as_usize() as u64 >> 6),
         );
 
-        let cmdqs_log2 = self.regs().IDR1.read(IDR1::CMDQS);
+        info!("Max CMDQ log2: {}, set CMDQ log2 {}", self.regs().IDR1.read(IDR1::CMDQS), H::CMDQ_EVENTQ_BITS_SET);
+        let cmdqs_log2 = H::CMDQ_EVENTQ_BITS_SET;
         self.cmd_queue.init(cmdqs_log2);
         self.regs().CMDQ_BASE.write(
             CMDQ_BASE::RA::ReadAllocate
@@ -137,12 +134,11 @@ impl<H: PagingHandler> SMMUv3<H> {
             .CMDQ_CONS
             .write(CMDQ_CONS::RD.val(self.cmd_queue.cons_value()));
 
-        let evnetqs_log2 = self.regs().IDR1.read(IDR1::EVENTQS);
-        self.event_queue.init(evnetqs_log2);
+        self.event_queue.init(cmdqs_log2);
         self.regs().EVENTQ_BASE.write(
             EVENTQ_BASE::WA::ReadAllocate
                 + EVENTQ_BASE::ADDR.val(self.event_queue.base_addr().as_usize() as u64 >> 5)
-                + EVENTQ_BASE::LOG2SIZE.val(evnetqs_log2 as _),
+                + EVENTQ_BASE::LOG2SIZE.val(cmdqs_log2 as _),
         );
         self.regs()
             .EVENTQ_PROD
@@ -218,29 +214,16 @@ impl<H: PagingHandler> SMMUv3<H> {
             self.cmd_queue.set_cons_value(cons_value);
         }
 
-        self.cmd_queue.cmd_insert(cmd);
-
-            info!("prod: {}", self.regs().CMDQ_PROD.get());
-            let cmdq_cons = self.regs().CMDQ_CONS.get();
-            info!(
-                "cmdq_cons: 0x{:x}",
-                cmdq_cons,
-            );
+        self.cmd_queue.cmd_insert(cmd.clone());
 
         self.regs()
             .CMDQ_PROD
             .write(CMDQ_PROD::WR.val(self.cmd_queue.prod_value()));
 
+        let mut loop_count = 0;
         while !self.cmd_queue.empty() {
             debug!("Command queue is not empty, consuming");
-            info!("prod: {}", self.regs().CMDQ_PROD.get());
             let cmdq_cons = self.regs().CMDQ_CONS.get();
-            info!(
-                "cmdq_cons: 0x{:x}, mask: 0x{:x}, value:0x{:x}",
-                cmdq_cons,
-                CMDQ_CONS::ERR.mask,
-                cmdq_cons & CMDQ_CONS::ERR.mask
-            );
             if cmdq_cons & (CMDQ_CONS::ERR.mask << CMDQ_CONS::ERR.shift) != 0 {
                 warn!(
                     "CMDQ_CONS ERR code {}",
@@ -251,6 +234,11 @@ impl<H: PagingHandler> SMMUv3<H> {
             self.cmd_queue.set_cons_value(cons_value);
 
             self.find_event();
+
+            loop_count += 1;
+            if loop_count == 10 {
+                panic!("test end");
+            }
         }
 
         if sync {
@@ -261,7 +249,7 @@ impl<H: PagingHandler> SMMUv3<H> {
     pub fn find_event(&self) {
         let eventq_cons = self.regs().EVENTQ_CONS.get();
         let eventq_prod = self.regs().EVENTQ_PROD.get();
-        info!("EVENTQ_CONS: 0x{:x}, EVENTQ_PROD: 0x{:x}", eventq_cons, eventq_prod);
+        // info!("EVENTQ_CONS: 0x{:x}, EVENTQ_PROD: 0x{:x}", eventq_cons, eventq_prod);
     }
     /// Add a passthrough device, updating the stream table.
     pub fn add_device(&mut self, sid: usize, vmid: usize, s2pt_base: PhysAddr) {
@@ -275,9 +263,21 @@ impl<H: PagingHandler> SMMUv3<H> {
         self.add_cmd(cmd, true);
     }
 
+    pub fn cmd_prefetch(&mut self, sid: usize) {
+        let cmd = Cmd::cmd_prefetch_config(sid as u32);
+        self.add_cmd(cmd, true);
+    }
+
     pub fn add_all_devices(&mut self) {
-        for i in 1..=self.stream_table.entry_count() {
-            self.add_device(i, 1, PhysAddr::from(0x2000008000));
+        for sid in 0..=self.stream_table.entry_count() {
+            // self.add_device(sid, 1, PhysAddr::from(0x2000008000));
+            // self.add_device(sid, 1, PhysAddr::from(0x406d9000));
+            self.cmd_prefetch(sid);
+            // self.add_cmd(Cmd::cmd_sync(), false);
+            // if sid == 10 {
+            //     panic!("test end");
+            // }
         }
+        info!("QQQQQQQQQ All devices added to the stream table");
     }
 }

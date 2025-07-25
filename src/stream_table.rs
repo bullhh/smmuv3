@@ -88,6 +88,13 @@ const STRTAB_STE_2_S2AA64: u64 = 1 << 51; // 51 = 179 - 128
 /// - 0b0 If SMMU_IDR3.PTWNNC == 0: CD fetch and stage 1 translation table walks allowed to any valid stage 2 address. If SMMU_IDR3.PTWNNC == 1: A translation table access or CD fetch mapped as any Device type occurs as if it is to Normal Non-cacheable memory.
 /// - 0b1 CD fetch or Stage 1 translation table walks to stage 2 addresses mapped as any Device are terminated. A stage 2 Permission fault is recorded.
 const STRTAB_STE_2_S2PTW: u64 = 1 << 54; // 54 = 182 - 128
+
+/// S2S, bit [185]
+/// Stage 2 fault behavior - Stall
+/// See section 5.5 Fault configuration (A, R, S bits) for a description of fault configuration.
+/// When STE.Config == 0b10x (Stage 2 disabled), {S2S, S2R} are IGNORED.
+/// If stage 2 is not implemented, that is when SMMU_IDR0.S2P == 0, this field is RES0.
+const STRTAB_STE_2_S2S: u64 = 1 << 57; // 57 = 185 - 128
 /// S2R, bit [186]
 ///
 /// Stage 2 fault behavior - Record.
@@ -171,12 +178,17 @@ impl<H: PagingHandler> LinearStreamTable<H> {
         }
     }
 
-    pub fn init(&mut self, sid_max_bits: u32) {
-        self.entry_count = 1 << sid_max_bits;
+    pub fn init(&mut self, sid_bits: u32) {
+        self.entry_count = 1 << sid_bits;
         let size = self.entry_count * STRTAB_STE_SIZE;
         let base = H::alloc_pages(size / PAGE_SIZE_4K).expect("Failed to allocate stream table");
         self.base = base;
-
+        info!(
+            "Stream table base address: {:?}, entry_count: {}, size: {}",
+            self.base,
+            self.entry_count,
+            size
+        );
         // First we just mark all entries as bypass.
         for sid in 0..self.entry_count {
             self.set_bypass_ste(sid);
@@ -198,13 +210,13 @@ impl<H: PagingHandler> LinearStreamTable<H> {
     }
 
     pub(crate) fn set_s2_translated_ste(&self, sid: usize, vmid: usize, s2pt_base: PhysAddr) {
-        info!(
-            "write ste, sid: 0x{:x}, vmid: 0x{:x}, ste_addr:0x{:x}, root_pt: {:?}",
-            sid,
-            vmid,
-            self.base + sid * STRTAB_STE_SIZE,
-            s2pt_base
-        );
+        // info!(
+        //     "write ste, sid: 0x{:x}, vmid: 0x{:x}, ste_addr:0x{:x}, root_pt: {:?}",
+        //     sid,
+        //     vmid,
+        //     self.base + sid * STRTAB_STE_SIZE,
+        //     s2pt_base
+        // );
 
         let entry = self.ste(sid);
         *entry = StreamTableEntry::s2_translated_entry(vmid as _, s2pt_base);

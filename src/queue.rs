@@ -1,5 +1,4 @@
-use core::mem::size_of;
-
+use core::sync::atomic::{Ordering, fence};
 use memory_addr::{align_up_4k, va, VirtAddr, PAGE_SIZE_4K};
 
 use crate::hal::PagingHandler;
@@ -15,12 +14,13 @@ pub const MAX_CMD_EVENT_QS: u32 = 19;
 /// Commands 4.1. Commands overview
 /// 4.1 Commands overview
 /// 4.1.1 Command opcodes
+const CMD_PREFETCH_CONFIG: u64 = 0x01;
 const CMD_CFGI_STE: u64 = 0x03;
 const CMD_SYNC: u64 = 0x46;
 
 const CMDQ_ENT_DWORDS: usize = 2;
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 #[repr(C)]
 pub struct Cmd([u64; CMDQ_ENT_DWORDS]);
 
@@ -37,7 +37,7 @@ impl Cmd {
         cmd.0[0] |= (stream_id as u64) << CMD_CFGI_STE_SID_OFFSET;
         // Leaf == 1
         cmd.0[1] |= CMDQ_CFGI_1_LEAF;
-        info!("CMD: 0x{:x}, 0x{:x}", cmd.0[0], cmd.0[1]);
+        // info!("CMD: 0x{:x}, 0x{:x}", cmd.0[0], cmd.0[1]);
         cmd
     }
 
@@ -50,6 +50,14 @@ impl Cmd {
     pub fn cmd_sync() -> Self {
         let mut cmd = Self::default();
         cmd.0[0] |= CMD_SYNC;
+        cmd
+    }
+
+    pub fn cmd_prefetch_config(stream_id: u32) -> Self {
+        const CMD_PREFETCH_CONFIG_SID_OFFSET: u64 = 32;
+        let mut cmd = Self::default();
+        cmd.0[0] |= CMD_PREFETCH_CONFIG; 
+        cmd.0[0] |= (stream_id as u64) << CMD_PREFETCH_CONFIG_SID_OFFSET;
         cmd
     }
 }
@@ -85,6 +93,13 @@ impl<H: PagingHandler> Queue<H> {
 
         let num_pages = align_up_4k(self.queue_size as usize * size_of::<Cmd>()) / PAGE_SIZE_4K;
         self.base = H::phys_to_virt(H::alloc_pages(num_pages).expect("Failed to allocate queue"));
+        info!(
+            "Queue base address: {:?}, size: {}, qs: {}, num_pages: {}",
+            self.base,
+            self.queue_size,
+            self.qs,
+            num_pages
+        );
     }
 
     pub fn base_addr(&self) -> VirtAddr {
@@ -159,10 +174,18 @@ impl<H: PagingHandler> Queue<H> {
     pub fn cmd_insert(&mut self, cmd: Cmd) {
         let idx = self.prod_wr() as usize;
         let base = self.base.as_mut_ptr() as *mut Cmd;
+        let cmdq_addr = unsafe { base.add(idx) };
+
         unsafe {
-            base.add(idx).write(cmd);
+            cmdq_addr.write(cmd);
         }
+        fence(Ordering::Release);//强制保序，强度较弱，可更换成mbarrier库
+
+        H::flush(cmdq_addr as usize, size_of::<Cmd>());
+        
         self.inc_proc_wq();
+
+        // info!("idx:{}, base: {:p}, cmd_len: {}", idx, cmdq_addr, size_of::<Cmd>());
     }
 }
 
@@ -188,6 +211,15 @@ mod test {
 
         fn dealloc_pages(paddr: PhysAddr, _num_pages: usize) {
             assert!(paddr == pa!(unsafe { DUMMY_PAGE.as_mut_ptr() } as usize));
+        }
+
+        fn flush(start: usize, len: usize) {
+            info!("Flush called, start: {}, len: {}", start, len);
+        }
+
+        fn wait_until(duration: core::time::Duration) -> Result<(), &'static str> {
+            info!("Wait until called, duration: {:?}", duration);
+            Ok(())
         }
     }
 
