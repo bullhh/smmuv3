@@ -190,12 +190,9 @@ impl<H: PagingHandler> LinearStreamTable<H> {
         let size = self.entry_count * STRTAB_STE_SIZE;
         let base = H::alloc_pages(size / PAGE_SIZE_4K).expect("Failed to allocate stream table");
         self.base = base;
-        info!(
-            "Stream table base address: {:?}, entry_count: {}, size: {}",
-            self.base,
-            self.entry_count,
-            size
-        );
+        for sid in 0..self.entry_count() {
+            self.set_bypass_ste(sid);
+        }
     }
 
     pub fn base_addr(&self) -> PhysAddr {
@@ -216,13 +213,12 @@ impl<H: PagingHandler> LinearStreamTable<H> {
         let entry: &mut StreamTableEntry = self.ste(sid);
         *entry = StreamTableEntry::s2_translated_entry(vmid as _, s2pt_base);
 
-        debug!(
-            "write ste, sid: 0x{:x}, vmid: 0x{:x}, ste_addr:0x{:x}, root_pt:0x {:x?}, *entry: 0x{:x?}",
+        info!(
+            "write ste, sid: 0x{:x}, vmid: 0x{:x}, ste_addr:0x{:x}, root_pt:0x {:x?}",
             sid,
             vmid,
             self.base + sid * STRTAB_STE_SIZE,
             s2pt_base,
-            *entry
         );
     }
 

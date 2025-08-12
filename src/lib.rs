@@ -22,7 +22,7 @@ pub use hal::PagingHandler;
 pub use regs::*;
 
 use queue::{Cmd, Queue};
-use stream_table::{LinearStreamTable, StreamTableEntry};
+use stream_table::LinearStreamTable;
 
 register_structs! {
     /// Chapter 6. Memory map and registers 6.2.
@@ -122,10 +122,6 @@ impl<H: PagingHandler> SMMUv3<H> {
             .CMDQ_CONS
             .write(CMDQ_CONS::RD.val(self.cmd_queue.cons_value()));
 
-        self.regs()
-            .CR0
-            .write(CR0::CMDQEN::Enable);
-
         self.stream_table_init();
 
         self.enable();
@@ -160,9 +156,7 @@ impl<H: PagingHandler> SMMUv3<H> {
 
     pub fn stream_table_init(&mut self) {
         self.stream_table.init(H::SID_BITS_SET);
-        for sid in 0..self.stream_table.entry_count() {
-            self.stream_table.set_bypass_ste(sid);
-        }
+
         self.regs().STRTAB_BASE_CFG.write(
             STRTAB_BASE_CFG::FMT::Linear + STRTAB_BASE_CFG::LOG2SIZE.val(H::SID_BITS_SET),
         );

@@ -83,7 +83,7 @@ impl<H: PagingHandler> Queue<H> {
 
         let num_pages = align_up_4k(self.queue_size as usize * size_of::<Cmd>()) / PAGE_SIZE_4K;
         self.base = H::phys_to_virt(H::alloc_pages(num_pages).expect("Failed to allocate queue"));
-        info!(
+        debug!(
             "Queue base address: {:?}, size: {}, qs: {}, num_pages: {}",
             self.base,
             self.queue_size,

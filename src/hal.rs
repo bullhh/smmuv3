@@ -1,5 +1,4 @@
 use memory_addr::{PhysAddr, VirtAddr};
-use core::time::Duration;
 
 /// The low-level **OS-dependent** helpers that must be provided for
 /// [`crate::SMMUv3`].
