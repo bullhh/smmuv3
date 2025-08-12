@@ -231,5 +231,11 @@ impl<H: PagingHandler> SMMUv3<H> {
             .set_s2_translated_ste(sid, vmid, s2pt_base);
 
         self.add_cmd(cmd, true);
+        self.cmd_prefetch(sid);
+    }
+
+    pub fn cmd_prefetch(&mut self, sid: usize) {
+        let cmd = Cmd::cmd_prefetch_config(sid as u32);
+        self.add_cmd(cmd, true);
     }
 }

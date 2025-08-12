@@ -14,6 +14,7 @@ pub const MAX_CMD_EVENT_QS: u32 = 19;
 /// Commands 4.1. Commands overview
 /// 4.1 Commands overview
 /// 4.1.1 Command opcodes
+const CMD_PREFETCH_CONFIG: u64 = 0x01;
 const CMD_CFGI_STE: u64 = 0x03;
 const CMD_SYNC: u64 = 0x46;
 
@@ -48,6 +49,22 @@ impl Cmd {
     pub fn cmd_sync() -> Self {
         let mut cmd = Self::default();
         cmd.0[0] |= CMD_SYNC;
+        cmd
+    }
+
+    pub fn cmd_prefetch_config(stream_id: u32) -> Self {
+        const CMD_PREFETCH_CONFIG_SID_OFFSET: u64 = 32;
+        let mut cmd = Self::default();
+        cmd.0[0] |= CMD_PREFETCH_CONFIG; 
+        cmd.0[0] |= (stream_id as u64) << CMD_PREFETCH_CONFIG_SID_OFFSET;
+        cmd
+    }
+
+    pub fn cmd_cfgi_all() -> Self {
+        const CMD_CFGI_ALL: u64 = 0x04;
+        let mut cmd = Self::default();
+        cmd.0[0] |= CMD_CFGI_ALL;
+        cmd.0[1] = 31;
         cmd
     }
 }
