@@ -49,6 +49,7 @@ impl Cmd {
     /// - HTTU updates caused by completed translations.
     pub fn cmd_sync() -> Self {
         let mut cmd = Self::default();
+
         cmd.0[0] |= CMD_SYNC;
         cmd
     }
@@ -60,6 +61,29 @@ impl Cmd {
         cmd.0[0] |= (stream_id as u64) << CMD_PREFETCH_CONFIG_SID_OFFSET;
         cmd
     }
+
+    pub fn cmd_cfgi_all() -> Self {
+        const CMD_CFGI_ALL: u64 = 0x04;
+        let mut cmd = Self::default();
+        cmd.0[0] |= CMD_CFGI_ALL;
+        cmd.0[1] = 31;
+        cmd
+    }
+
+    pub fn cmd_op_tlbi_el2_all() -> Self {
+        const CMD_OP_TLBI_EL2_ALL:u64 = 0x20;
+        let mut cmd = Self::default();
+        cmd.0[0] |= CMD_OP_TLBI_EL2_ALL;
+        cmd
+    }
+
+    pub fn cmd_op_tlbi_nsnh_all() -> Self {
+        const CMD_OP_TLBI_NSNH_ALL:u64 = 0x30;
+        let mut cmd = Self::default();
+        cmd.0[0] |= CMD_OP_TLBI_NSNH_ALL;
+        cmd
+    }
+
 }
 
 /// 3.5 Command and Event queues
@@ -115,8 +139,10 @@ impl<H: PagingHandler> Queue<H> {
     }
 
     pub fn set_cons_value(&mut self, cons: u32) {
-        if cons & !((1 << self.qs) - 1) != 0 {
-            warn!("Invalid cons value {}", cons);
+        //Bit [QS]: WR_WRAP - Command queue write index wrap flag.
+        //Bits [QS-1:0]: WR - Command queue write index
+        if cons >= 1 << (self.qs + 1) {
+            panic!("cons value {} exceeds queue size {}", cons, self.queue_size);
         }
         self.cons = cons;
     }
@@ -141,7 +167,6 @@ impl<H: PagingHandler> Queue<H> {
         let mut current_proc_wq = self.prod_wr();
         let mut current_proc_wrap = self.prod_wr_wrap();
         current_proc_wq += 1;
-
         // Check overflow, update wrap bit.
         if (current_proc_wq & (self.queue_size - 1)) == 0 {
             current_proc_wq %= self.queue_size;
@@ -149,7 +174,6 @@ impl<H: PagingHandler> Queue<H> {
         }
 
         assert!(current_proc_wq & !((1 << self.qs) - 1) == 0);
-
         let current_proc_wrap_bit = if current_proc_wrap {
             1 << self.qs
         } else {

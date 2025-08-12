@@ -60,13 +60,13 @@ const STRTAB_STE_2_S2T0SZ_OFFSET: u64 = 32; // 32 = 160 - 128
 /// Overall, bits [178:160] refers to the lower 19 bits of [`aarch64_cpu::registers::VTCR_EL2`].
 const STRTAB_STE_2_S2VTCR_LEN: u64 = 19;
 
-const DEFAULT_S2VTCR: u64 = VTCR_EL2::PS::PA_40B_1TB.mask()
-    | VTCR_EL2::TG0::Granule4KB.mask()
-    | VTCR_EL2::SH0::Inner.mask()
-    | VTCR_EL2::ORGN0::NormalWBRAWA.mask()
-    | VTCR_EL2::IRGN0::NormalWBRAWA.mask()
-    | VTCR_EL2::SL0.val(0b01).mask()
-    | VTCR_EL2::T0SZ.val(16).mask();
+const DEFAULT_S2VTCR: u64 = VTCR_EL2::PS::PA_40B_1TB.value
+    | VTCR_EL2::TG0::Granule4KB.value
+    | VTCR_EL2::SH0::Inner.value
+    | VTCR_EL2::ORGN0::NormalWBRAWA.value
+    | VTCR_EL2::IRGN0::NormalWBRAWA.value
+    | VTCR_EL2::SL0.val(0b01).value
+    | VTCR_EL2::T0SZ.val(64-39).value;
 
 /// S2AA64, bit [179]
 ///
@@ -123,6 +123,7 @@ const fn extract_bits(value: u64, start: u64, length: u64) -> u64 {
     (value >> start) & mask
 }
 
+#[derive(Debug)]
 #[allow(unused)]
 pub struct StreamTableEntry([u64; STRTAB_STE_DWORDS]);
 
@@ -140,6 +141,12 @@ impl StreamTableEntry {
         ])
     }
 
+    /// STE.S2VMID[15:0] is IGNORED and no VMID tagging occurs when any of the following are true:
+    /// • Stage 2 is not implemented in the Security state corresponding to the STE.
+    /// • STE.Config[1:0] == 0b00. Note: In this case, no TLB entries are inserted as translation is bypassed.
+    /// • A Non-secure STE StreamWorld is not NS-EL1.
+    /// • A Secure STE has a StreamWorld other than “Secure”.
+    /// • A Realm STE StreamWorld is not Realm-EL1.
     pub const fn s2_translated_entry(vmid: u64, s2pt_base: PhysAddr) -> Self {
         Self([
             STRTAB_STE_0_V | STRTAB_STE_0_CFG_S1_BYPASS_S2_TRANS,
@@ -161,6 +168,28 @@ impl StreamTableEntry {
             0,
         ])
     }
+
+    // pub const fn s2_translated_entry(vmid: u64, s2pt_base: PhysAddr) -> Self {
+    //     Self([
+    //         STRTAB_STE_0_V | STRTAB_STE_0_CFG_S1_BYPASS_S2_TRANS,
+    //         STRTAB_STE_1_SHCFG_INCOMING,
+    //         (vmid << STRTAB_STE_2_S2VMID_OFFSET)
+    //             | extract_bits(DEFAULT_S2VTCR, 0, STRTAB_STE_2_S2VTCR_LEN)
+    //                 << STRTAB_STE_2_S2T0SZ_OFFSET
+    //             | STRTAB_STE_2_S2AA64
+    //             | STRTAB_STE_2_S2PTW
+    //             | STRTAB_STE_2_S2R,
+    //         extract_bits(
+    //             s2pt_base.as_usize() as u64,
+    //             STRTAB_STE_3_S2TTB_OFF,
+    //             STRTAB_STE_3_S2TTB_LEN,
+    //         ) << STRTAB_STE_3_S2TTB_OFF,
+    //         0,
+    //         0,
+    //         0,
+    //         0,
+    //     ])
+    // }
 }
 
 pub struct LinearStreamTable<H: PagingHandler> {
@@ -189,37 +218,53 @@ impl<H: PagingHandler> LinearStreamTable<H> {
             self.entry_count,
             size
         );
-        // First we just mark all entries as bypass.
-        for sid in 0..self.entry_count {
-            self.set_bypass_ste(sid);
-        }
     }
 
     pub fn base_addr(&self) -> PhysAddr {
         self.base
     }
 
-    fn ste(&self, sid: usize) -> &mut StreamTableEntry {
+    pub fn ste(&self, sid: usize) -> &mut StreamTableEntry {
         let base = self.base + sid * STRTAB_STE_SIZE;
         unsafe { &mut *(base.as_usize() as *mut StreamTableEntry) }
     }
 
-    fn set_bypass_ste(&self, sid: usize) {
+    pub fn set_bypass_ste(&self, sid: usize) {
         let tab = self.ste(sid);
         *tab = StreamTableEntry::bypass_entry();
     }
 
     pub(crate) fn set_s2_translated_ste(&self, sid: usize, vmid: usize, s2pt_base: PhysAddr) {
-        // info!(
-        //     "write ste, sid: 0x{:x}, vmid: 0x{:x}, ste_addr:0x{:x}, root_pt: {:?}",
-        //     sid,
-        //     vmid,
-        //     self.base + sid * STRTAB_STE_SIZE,
-        //     s2pt_base
-        // );
-
-        let entry = self.ste(sid);
+        let entry: &mut StreamTableEntry = self.ste(sid);
         *entry = StreamTableEntry::s2_translated_entry(vmid as _, s2pt_base);
+        // *entry = StreamTableEntry::s2_translated_entry(vmid as _, 0.into());
+
+        info!(
+            "write ste, sid: 0x{:x}, vmid: 0x{:x}, ste_addr:0x{:x}, root_pt:0x {:x?}, *entry: 0x{:x?}",
+            sid,
+            vmid,
+            self.base + sid * STRTAB_STE_SIZE,
+            s2pt_base,
+            *entry
+        );
+
+        info!("u64_2: 0x{:x?}", ((vmid as u64) << STRTAB_STE_2_S2VMID_OFFSET)
+                | extract_bits(DEFAULT_S2VTCR, 0, STRTAB_STE_2_S2VTCR_LEN)
+                    << STRTAB_STE_2_S2T0SZ_OFFSET
+                | STRTAB_STE_2_S2AA64
+                | STRTAB_STE_2_S2PTW
+                | STRTAB_STE_2_S2R);
+        info!("DEFAULT_S2VTCR: 0x{:x?}-> 0x{:x?}", DEFAULT_S2VTCR, extract_bits(DEFAULT_S2VTCR, 0, STRTAB_STE_2_S2VTCR_LEN)<< STRTAB_STE_2_S2T0SZ_OFFSET);
+        // let l1 = unsafe {*(s2pt_base.as_usize() as *const [u64; 4])};
+        // let tmp = l1[0]>>12<<12 as usize;
+        // let ptr = tmp as *const u64;
+        // let l2 = unsafe {*ptr};
+        // info!("s2pt:{:x?}", l1);
+        // info!("l2: 0x{:x}: {:x?}", (l1[0])>>12<<12, l2);
+        // let tmp = l2>>12<<12 as usize;
+        // let ptr = tmp as *const [u64; 4];
+        // let l3 = unsafe {*ptr};
+        // info!("l3: 0x{:x}: {:x?}", l2>>12<<12, l3);
     }
 
     pub fn entry_count(&self) -> usize {
