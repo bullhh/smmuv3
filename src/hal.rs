@@ -35,7 +35,6 @@ pub trait PagingHandler: Sized {
     ///
     /// Used to access the physical memory directly in page table implementation.
     fn phys_to_virt(paddr: PhysAddr) -> VirtAddr;
-
+    ///flush the memory range [start, start+len)
     fn flush(start: usize, len: usize);
-    fn wait_until(duration: Duration) -> Result<(), &'static str>;
 }

@@ -14,7 +14,6 @@ pub const MAX_CMD_EVENT_QS: u32 = 19;
 /// Commands 4.1. Commands overview
 /// 4.1 Commands overview
 /// 4.1.1 Command opcodes
-const CMD_PREFETCH_CONFIG: u64 = 0x01;
 const CMD_CFGI_STE: u64 = 0x03;
 const CMD_SYNC: u64 = 0x46;
 
@@ -37,7 +36,6 @@ impl Cmd {
         cmd.0[0] |= (stream_id as u64) << CMD_CFGI_STE_SID_OFFSET;
         // Leaf == 1
         cmd.0[1] |= CMDQ_CFGI_1_LEAF;
-        // info!("CMD: 0x{:x}, 0x{:x}", cmd.0[0], cmd.0[1]);
         cmd
     }
 
@@ -49,41 +47,9 @@ impl Cmd {
     /// - HTTU updates caused by completed translations.
     pub fn cmd_sync() -> Self {
         let mut cmd = Self::default();
-
         cmd.0[0] |= CMD_SYNC;
         cmd
     }
-
-    pub fn cmd_prefetch_config(stream_id: u32) -> Self {
-        const CMD_PREFETCH_CONFIG_SID_OFFSET: u64 = 32;
-        let mut cmd = Self::default();
-        cmd.0[0] |= CMD_PREFETCH_CONFIG; 
-        cmd.0[0] |= (stream_id as u64) << CMD_PREFETCH_CONFIG_SID_OFFSET;
-        cmd
-    }
-
-    pub fn cmd_cfgi_all() -> Self {
-        const CMD_CFGI_ALL: u64 = 0x04;
-        let mut cmd = Self::default();
-        cmd.0[0] |= CMD_CFGI_ALL;
-        cmd.0[1] = 31;
-        cmd
-    }
-
-    pub fn cmd_op_tlbi_el2_all() -> Self {
-        const CMD_OP_TLBI_EL2_ALL:u64 = 0x20;
-        let mut cmd = Self::default();
-        cmd.0[0] |= CMD_OP_TLBI_EL2_ALL;
-        cmd
-    }
-
-    pub fn cmd_op_tlbi_nsnh_all() -> Self {
-        const CMD_OP_TLBI_NSNH_ALL:u64 = 0x30;
-        let mut cmd = Self::default();
-        cmd.0[0] |= CMD_OP_TLBI_NSNH_ALL;
-        cmd
-    }
-
 }
 
 /// 3.5 Command and Event queues
@@ -208,8 +174,6 @@ impl<H: PagingHandler> Queue<H> {
         H::flush(cmdq_addr as usize, size_of::<Cmd>());
         
         self.inc_proc_wq();
-
-        // info!("idx:{}, base: {:p}, cmd_len: {}", idx, cmdq_addr, size_of::<Cmd>());
     }
 }
 
@@ -224,6 +188,9 @@ mod test {
     struct DummyPagingHandler {}
 
     impl crate::hal::PagingHandler for DummyPagingHandler {
+        const SID_BITS_SET: u32 = 16;
+        const CMDQ_EVENTQ_BITS_SET: u32 = 8;
+
         fn alloc_pages(pages: usize) -> Option<PhysAddr> {
             assert!(pages == 1);
             Some(pa!(unsafe { DUMMY_PAGE.as_mut_ptr() } as usize))
@@ -239,11 +206,6 @@ mod test {
 
         fn flush(start: usize, len: usize) {
             info!("Flush called, start: {}, len: {}", start, len);
-        }
-
-        fn wait_until(duration: core::time::Duration) -> Result<(), &'static str> {
-            info!("Wait until called, duration: {:?}", duration);
-            Ok(())
         }
     }
 

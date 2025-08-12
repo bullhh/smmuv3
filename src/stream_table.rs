@@ -94,7 +94,7 @@ const STRTAB_STE_2_S2PTW: u64 = 1 << 54; // 54 = 182 - 128
 /// See section 5.5 Fault configuration (A, R, S bits) for a description of fault configuration.
 /// When STE.Config == 0b10x (Stage 2 disabled), {S2S, S2R} are IGNORED.
 /// If stage 2 is not implemented, that is when SMMU_IDR0.S2P == 0, this field is RES0.
-const STRTAB_STE_2_S2S: u64 = 1 << 57; // 57 = 185 - 128
+// const STRTAB_STE_2_S2S: u64 = 1 << 57; // 57 = 185 - 128
 /// S2R, bit [186]
 ///
 /// Stage 2 fault behavior - Record.
@@ -168,28 +168,6 @@ impl StreamTableEntry {
             0,
         ])
     }
-
-    // pub const fn s2_translated_entry(vmid: u64, s2pt_base: PhysAddr) -> Self {
-    //     Self([
-    //         STRTAB_STE_0_V | STRTAB_STE_0_CFG_S1_BYPASS_S2_TRANS,
-    //         STRTAB_STE_1_SHCFG_INCOMING,
-    //         (vmid << STRTAB_STE_2_S2VMID_OFFSET)
-    //             | extract_bits(DEFAULT_S2VTCR, 0, STRTAB_STE_2_S2VTCR_LEN)
-    //                 << STRTAB_STE_2_S2T0SZ_OFFSET
-    //             | STRTAB_STE_2_S2AA64
-    //             | STRTAB_STE_2_S2PTW
-    //             | STRTAB_STE_2_S2R,
-    //         extract_bits(
-    //             s2pt_base.as_usize() as u64,
-    //             STRTAB_STE_3_S2TTB_OFF,
-    //             STRTAB_STE_3_S2TTB_LEN,
-    //         ) << STRTAB_STE_3_S2TTB_OFF,
-    //         0,
-    //         0,
-    //         0,
-    //         0,
-    //     ])
-    // }
 }
 
 pub struct LinearStreamTable<H: PagingHandler> {
@@ -237,9 +215,8 @@ impl<H: PagingHandler> LinearStreamTable<H> {
     pub(crate) fn set_s2_translated_ste(&self, sid: usize, vmid: usize, s2pt_base: PhysAddr) {
         let entry: &mut StreamTableEntry = self.ste(sid);
         *entry = StreamTableEntry::s2_translated_entry(vmid as _, s2pt_base);
-        // *entry = StreamTableEntry::s2_translated_entry(vmid as _, 0.into());
 
-        info!(
+        debug!(
             "write ste, sid: 0x{:x}, vmid: 0x{:x}, ste_addr:0x{:x}, root_pt:0x {:x?}, *entry: 0x{:x?}",
             sid,
             vmid,
@@ -247,24 +224,6 @@ impl<H: PagingHandler> LinearStreamTable<H> {
             s2pt_base,
             *entry
         );
-
-        info!("u64_2: 0x{:x?}", ((vmid as u64) << STRTAB_STE_2_S2VMID_OFFSET)
-                | extract_bits(DEFAULT_S2VTCR, 0, STRTAB_STE_2_S2VTCR_LEN)
-                    << STRTAB_STE_2_S2T0SZ_OFFSET
-                | STRTAB_STE_2_S2AA64
-                | STRTAB_STE_2_S2PTW
-                | STRTAB_STE_2_S2R);
-        info!("DEFAULT_S2VTCR: 0x{:x?}-> 0x{:x?}", DEFAULT_S2VTCR, extract_bits(DEFAULT_S2VTCR, 0, STRTAB_STE_2_S2VTCR_LEN)<< STRTAB_STE_2_S2T0SZ_OFFSET);
-        // let l1 = unsafe {*(s2pt_base.as_usize() as *const [u64; 4])};
-        // let tmp = l1[0]>>12<<12 as usize;
-        // let ptr = tmp as *const u64;
-        // let l2 = unsafe {*ptr};
-        // info!("s2pt:{:x?}", l1);
-        // info!("l2: 0x{:x}: {:x?}", (l1[0])>>12<<12, l2);
-        // let tmp = l2>>12<<12 as usize;
-        // let ptr = tmp as *const [u64; 4];
-        // let l3 = unsafe {*ptr};
-        // info!("l3: 0x{:x}: {:x?}", l2>>12<<12, l3);
     }
 
     pub fn entry_count(&self) -> usize {
