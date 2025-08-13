@@ -231,6 +231,8 @@ impl<H: PagingHandler> SMMUv3<H> {
             .set_s2_translated_ste(sid, vmid, s2pt_base);
 
         self.add_cmd(cmd, true);
+
+        //prefetch can optimize the initial use STE lookup time
         self.cmd_prefetch(sid);
     }
 
