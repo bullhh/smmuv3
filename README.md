@@ -6,7 +6,7 @@
 
 A *System Memory Management Unit* (SMMU) performs a task that is analogous to that of an MMU in a PE, translating addresses for DMA requests from system I/O devices before the requests are passed into the system interconnect. It is active for DMA only. Traffic in the other direction, from the system or PE to the device, is managed by other means – for example, the PE MMUs.
 
-<img src="doc/figures/System_MMU_in_DMA_traffic.png" alt="System_MMU_in_DMA_traffic" style="zoom:50%;" />
+<img src="doc/figures/System_MMU_in_DMA_traffic.png" alt="System_MMU_in_DMA_traffic" style="zoom:25%;" />
 
 Several SMMUs might exist within a system. An SMMU might translate traffic from just one device or a set of devices. The SMMU supports two stages of translation in a similar way to PEs supporting the Virtualization Extensions. Each stage of translation can be independently enabled. An incoming address is logically translated from VA to IPA in stage 1, then the IPA is input to stage 2 which translates the IPA to the output PA. Stage 1 is intended to be used by a software entity to provide isolation or translation to buffers within the entity, for example DMA isolation within an OS. Stage 2 is intended to be available in systems supporting the Virtualization Extensions and is intended to virtualize device DMA to guest VM address spaces.
 
@@ -32,9 +32,9 @@ PCIe devices use BDF (Bus/Device/Function) as the base value for StreamID, sid =
 
 ```
 pub trait PagingHandler: Sized {
-  const SID_BITS_SET: u32 ;                              //使用线性STE表数量=2^SID_BITS_SET
-  const CMDQ_EVENTQ_BITS_SET: u32;                       //cmd Queue和event Queue深度
-  fn alloc_pages(num_pages: usize) -> Option<PhysAddr>;  //申请STE、cmd Queue等内存页
+  const SID_BITS_SET: u32 ;                              //linear STE counter=2^SID_BITS_SET
+  const CMDQ_EVENTQ_BITS_SET: u32;                       //cmd Queue and event Queue depth
+  fn alloc_pages(num_pages: usize) -> Option<PhysAddr>;  
   fn dealloc_pages(paddr: PhysAddr, num_pages: usize);
   fn phys_to_virt(paddr: PhysAddr) -> VirtAddr;
   fn flush(start: usize, len: usize);
